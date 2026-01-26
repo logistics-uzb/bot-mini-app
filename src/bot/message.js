@@ -6,7 +6,7 @@ bot.on("message", async (msg) => {
   const chatId = msg.from.id;
   const text = msg.text;
   console.log("msg", msg);
-  const findUser = await Users.findOne({ chat_id: chatId }).lean();
+  // const findUser = await Users.findOne({ chat_id: chatId }).lean();
 
   // if (text == "/start" || text == "🔙 Menu") {
   console.log("start command received");
