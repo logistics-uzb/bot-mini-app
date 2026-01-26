@@ -1,0 +1,6 @@
+/node_modules
+/.env
+/src/utils/google.json
+/docker-compose-prod.yml
+/docker-compose-dev.yml
+/Dockerfile

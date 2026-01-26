@@ -1,0 +1,62 @@
+name: Deploy logistics prod/dev
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+
+  # ============================
+  # PROD DEPLOY
+  # ============================
+  deploy_prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy PROD
+        run: |
+          ssh -o StrictHostKeyChecking=no root@84.247.184.118 << 'EOF'
+            cd /home/Projects/prod/logist/logistics-bot/
+            git pull origin main
+            docker compose -f docker-compose-prod.yml down
+            docker compose -f docker-compose-prod.yml up -d --build
+            docker system prune -f
+          EOF
+
+
+  # ============================
+  # DEV DEPLOY
+  # ============================
+  deploy_dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy DEV
+        run: |
+          ssh -o StrictHostKeyChecking=no root@84.247.184.118 << 'EOF'
+            cd /home/Projects/dev/logistics-bot/
+            git pull origin dev
+            docker compose -f docker-compose-dev.yml down
+            docker compose -f docker-compose-dev.yml up -d --build
+            docker system prune -f
+          EOF
