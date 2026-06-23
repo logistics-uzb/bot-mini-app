@@ -5,8 +5,8 @@ const start = async (msg) => {
   const chatId = msg.from.id;
   const firstName = msg.from.first_name || "";
 
-  // let checkUser = await Users.findOne({ chat_id: chatId }).lean();
-  let checkUser = false;
+  let checkUser = await Users.findOne({ chat_id: chatId }).lean();
+  // let checkUser = false;
   if (checkUser) {
     await bot.sendMessage(
       chatId,
@@ -24,19 +24,27 @@ const start = async (msg) => {
                 },
               },
             ],
+            [
+              {
+                text: "🧭 Диспетчер платформаси",
+                web_app: {
+                  url: "https://yukchi-dispetcher.coachingzona.uz/auth",
+                },
+              },
+            ],
           ],
           remove_keyboard: true,
         },
       }
     );
   } else if (!checkUser) {
-    // let newUser = new Users({
-    //   chat_id: chatId,
-    //   full_name: `${msg.from.first_name} ${msg.from.last_name || ""}`,
-    //   admin: false,
-    //   createdAt: new Date(),
-    // });
-    // await newUser.save();
+    let newUser = new Users({
+      chat_id: chatId,
+      full_name: `${msg.from.first_name} ${msg.from.last_name || ""}`,
+      admin: false,
+      createdAt: new Date(),
+    });
+    await newUser.save();
     await bot.sendMessage(
       chatId,
       `Ассалому алайкум, ${firstName}! 👋
@@ -50,6 +58,14 @@ const start = async (msg) => {
                 text: "🚚 Юкларни кўриш",
                 web_app: {
                   url: process.env.MINI_APP_URL,
+                },
+              },
+            ],
+            [
+              {
+                text: "🧭 Диспетчер платформаси",
+                web_app: {
+                  url: "https://yukchi-dispetcher.coachingzona.uz/auth",
                 },
               },
             ],
