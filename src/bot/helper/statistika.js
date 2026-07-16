@@ -13,12 +13,13 @@ const STATS_API_PATH = process.env.STATS_API_PATH || "/v1/post/all";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
-// Yesterday 00:00 → today 00:00 in Asia/Tashkent, returned as UTC ms.
-const yesterdayWindowUtcMs = () => {
+// Today 00:00 → tomorrow 00:00 in Asia/Tashkent, returned as UTC ms.
+// Future hour buckets (past "now") will simply show 0 counts.
+const todayWindowUtcMs = () => {
   const nowTashkent = Date.now() + TZ_OFFSET_MS;
   const todayMidnightTashkent = Math.floor(nowTashkent / DAY_MS) * DAY_MS;
-  const toUtc = todayMidnightTashkent - TZ_OFFSET_MS;
-  const fromUtc = toUtc - DAY_MS;
+  const fromUtc = todayMidnightTashkent - TZ_OFFSET_MS;
+  const toUtc = fromUtc + DAY_MS;
   return { fromUtc, toUtc };
 };
 
@@ -77,7 +78,7 @@ const escapeHtml = (s) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const sendStatistika = async (bot, chatId) => {
-  const { fromUtc, toUtc } = yesterdayWindowUtcMs();
+  const { fromUtc, toUtc } = todayWindowUtcMs();
 
   const users = await Users.find({
     createdAt: { $gte: new Date(fromUtc), $lt: new Date(toUtc) },
