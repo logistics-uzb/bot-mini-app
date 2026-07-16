@@ -39,10 +39,11 @@ const bucketByHour = (fromUtc, timestamps) => {
   return buckets;
 };
 
-const buildBucketLines = (buckets) => {
+const buildCombinedLines = (userBuckets, clickBuckets) => {
   let out = "";
   for (let i = 0; i < 24; i++) {
-    out += `${pad2(i)}-${pad2((i + 1) % 24)}: ${buckets[i]}\n`;
+    const label = `${pad2(i)}-${pad2((i + 1) % 24)}`;
+    out += `${label}: ${userBuckets[i]} - ${clickBuckets[i]}\n`;
   }
   return out;
 };
@@ -101,10 +102,9 @@ const sendStatistika = async (bot, chatId) => {
   const dateStr = formatTashkentDate(fromUtc);
   const body =
     `${dateStr} 📆\n\n` +
-    `Foydalanuvchilar:\n${buildBucketLines(userBuckets)}Umumiy: ${userTotal}\n\n` +
-    `Kliklar:${clicksOk ? "" : " (API xatosi)"}\n${buildBucketLines(
-      clickBuckets
-    )}Umumiy: ${clickTotal}`;
+    `Soat - F - K\n` +
+    buildCombinedLines(userBuckets, clickBuckets) +
+    `Umumiy: ${userTotal} - ${clickTotal}${clicksOk ? "" : " (API xatosi)"}`;
 
   await bot.sendMessage(chatId, `<pre>${escapeHtml(body)}</pre>`, {
     parse_mode: "HTML",
