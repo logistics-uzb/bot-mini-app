@@ -49,7 +49,7 @@ const columnWidth = (values) =>
 
 const buildRow = (label, values, widths) =>
   label.padEnd(LABEL_WIDTH) +
-  values.map((v, i) => String(v).padStart(widths[i])).join(" - ");
+  values.map((v, i) => String(v).padEnd(widths[i])).join(" - ");
 
 const fetchClickBuckets = async (fromUtc, toUtc) => {
   const buckets = new Array(24).fill(0);
