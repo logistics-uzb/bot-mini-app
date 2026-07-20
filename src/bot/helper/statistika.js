@@ -10,6 +10,9 @@ const STATS_API_URL =
   process.env.STATS_API_URL ||
   "https://api.logistic-dev.coachingzona.uz/v1/stats/timeseries";
 const STATS_API_PATH = process.env.STATS_API_PATH || "/v1/post/all";
+const STATS_BUTTON_API_URL =
+  process.env.STATS_BUTTON_API_URL ||
+  "https://api.logistic-dev.coachingzona.uz/v1/stats/button-clicks";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
@@ -39,14 +42,14 @@ const bucketByHour = (fromUtc, timestamps) => {
   return buckets;
 };
 
-const buildCombinedLines = (userBuckets, clickBuckets) => {
-  let out = "";
-  for (let i = 0; i < 24; i++) {
-    const label = `${pad2(i)}-${pad2((i + 1) % 24)}`;
-    out += `${label}: ${userBuckets[i]} - ${clickBuckets[i]}\n`;
-  }
-  return out;
-};
+const LABEL_WIDTH = 8; // "Umumiy:" (7) + trailing space.
+
+const columnWidth = (values) =>
+  Math.max(...values.map((v) => String(v).length), 1);
+
+const buildRow = (label, values, widths) =>
+  label.padEnd(LABEL_WIDTH) +
+  values.map((v, i) => String(v).padStart(widths[i])).join(" - ");
 
 const fetchClickBuckets = async (fromUtc, toUtc) => {
   const buckets = new Array(24).fill(0);
@@ -75,17 +78,51 @@ const fetchClickBuckets = async (fromUtc, toUtc) => {
   }
 };
 
+const fetchButtonClickBuckets = async (fromUtc, toUtc) => {
+  const tgBuckets = new Array(24).fill(0);
+  const callBuckets = new Array(24).fill(0);
+  const url = `${STATS_BUTTON_API_URL}?bucket=hour&from=${fromUtc}&to=${toUtc}`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.error("button-clicks API HTTP", resp.status, url);
+      return { tgBuckets, callBuckets, tgTotal: 0, callTotal: 0, ok: false };
+    }
+    const json = await resp.json();
+    const points = json?.data?.points || [];
+    for (const p of points) {
+      const at = new Date(p.at).getTime();
+      const idx = Math.floor((at - fromUtc) / HOUR_MS);
+      if (idx >= 0 && idx < 24) {
+        tgBuckets[idx] = Number(p.tg) || 0;
+        callBuckets[idx] = Number(p.call) || 0;
+      }
+    }
+    const tgTotal = tgBuckets.reduce((s, n) => s + n, 0);
+    const callTotal = callBuckets.reduce((s, n) => s + n, 0);
+    return { tgBuckets, callBuckets, tgTotal, callTotal, ok: true };
+  } catch (e) {
+    console.error("button-clicks API fetch failed:", e.message);
+    return { tgBuckets, callBuckets, tgTotal: 0, callTotal: 0, ok: false };
+  }
+};
+
 const escapeHtml = (s) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const sendStatistika = async (bot, chatId) => {
   const { fromUtc, toUtc } = todayWindowUtcMs();
 
-  const users = await Users.find({
-    createdAt: { $gte: new Date(fromUtc), $lt: new Date(toUtc) },
-  })
-    .select("createdAt")
-    .lean();
+  const [users, clicksResult, buttonsResult] = await Promise.all([
+    Users.find({
+      createdAt: { $gte: new Date(fromUtc), $lt: new Date(toUtc) },
+    })
+      .select("createdAt")
+      .lean(),
+    fetchClickBuckets(fromUtc, toUtc),
+    fetchButtonClickBuckets(fromUtc, toUtc),
+  ]);
 
   const userTimestamps = users
     .filter((u) => u.createdAt)
@@ -97,14 +134,45 @@ const sendStatistika = async (bot, chatId) => {
     buckets: clickBuckets,
     total: clickTotal,
     ok: clicksOk,
-  } = await fetchClickBuckets(fromUtc, toUtc);
+  } = clicksResult;
 
+  const {
+    tgBuckets,
+    callBuckets,
+    tgTotal,
+    callTotal,
+    ok: buttonsOk,
+  } = buttonsResult;
+
+  const errFlag = clicksOk && buttonsOk ? "" : " (API xatosi)";
   const dateStr = formatTashkentDate(fromUtc);
-  const body =
-    `${dateStr} 📆\n\n` +
-    `Soat - F - K\n` +
-    buildCombinedLines(userBuckets, clickBuckets) +
-    `Umumiy: ${userTotal} - ${clickTotal}${clicksOk ? "" : " (API xatosi)"}`;
+
+  const widths = [
+    columnWidth([...userBuckets, userTotal]),
+    columnWidth([...clickBuckets, clickTotal]),
+    columnWidth([...tgBuckets, tgTotal]),
+    columnWidth([...callBuckets, callTotal]),
+  ];
+
+  const rows = [buildRow("Soat:", ["F", "K", "T", "C"], widths)];
+  for (let i = 0; i < 24; i++) {
+    rows.push(
+      buildRow(
+        `${pad2(i)}-${pad2((i + 1) % 24)}:`,
+        [userBuckets[i], clickBuckets[i], tgBuckets[i], callBuckets[i]],
+        widths
+      )
+    );
+  }
+  rows.push(
+    buildRow(
+      "Umumiy:",
+      [userTotal, clickTotal, tgTotal, callTotal],
+      widths
+    ) + errFlag
+  );
+
+  const body = `${dateStr} 📆\n\n${rows.join("\n")}`;
 
   await bot.sendMessage(chatId, `<pre>${escapeHtml(body)}</pre>`, {
     parse_mode: "HTML",

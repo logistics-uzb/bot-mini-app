@@ -17,30 +17,26 @@ const bot = new TelegramBot(BOT_TOKEN, {
 });
 
 // =====================
-// BOT COMMANDS
-// =====================
-bot.setMyCommands([{ command: "/start", description: "Начать чат" }]);
-
-// =====================
 // CHAT MENU BUTTON (MINI APP)
 // =====================
-(async () => {
-  try {
-    await bot.setChatMenuButton({
-      menu_button: {
-        type: "web_app",
-        text: "🚚 Юкларни кўриш",
-        web_app: {
-          url: MINI_APP_URL,
-        },
-      },
-    });
-
-    console.log("✅ Mini App menu button set successfully");
-  } catch (err) {
-    console.error("❌ Failed to set menu button:", err.message);
-  }
-})();
+// NOTE: the bot command menu AND the chat menu button are intentionally managed via BotFather,
+// not from code. Do not re-enable `bot.setMyCommands` or `bot.setChatMenuButton`.
+// (async () => {
+//   try {
+//     await bot.setChatMenuButton({
+//       menu_button: {
+//         type: "web_app",
+//         text: "🚚 Юкларни кўриш",
+//         web_app: {
+//           url: MINI_APP_URL,
+//         },
+//       },
+//     });
+//     console.log("✅ Mini App menu button set successfully");
+//   } catch (err) {
+//     console.error("❌ Failed to set menu button:", err.message);
+//   }
+// })();
 
 module.exports = {
   bot,
