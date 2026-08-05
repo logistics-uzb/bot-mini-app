@@ -7,7 +7,8 @@ const { sendStatsPage } = require("./helper/statspage");
 const {
   startBroadcast,
   isAwaitingBroadcast,
-  captureDraftAndPreview,
+  handleAdminInput,
+  listSurveys,
 } = require("./helper/broadcast");
 
 bot.on("message", async (msg) => {
@@ -45,12 +46,21 @@ bot.on("message", async (msg) => {
       }
       return;
     }
-    // If admin just typed /broadcast, the next message is the draft to preview.
+    if (cmd === "/broadcast_results" || cmd === "/broadcast-results") {
+      try {
+        await listSurveys(bot, chatId);
+      } catch (err) {
+        console.error("broadcast_results failed:", err.message);
+        await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
+      }
+      return;
+    }
+    // After /broadcast, admin sends message / poll title / poll option.
     if (isAwaitingBroadcast(chatId)) {
       try {
-        await captureDraftAndPreview(bot, chatId, msg);
+        await handleAdminInput(bot, chatId, msg);
       } catch (err) {
-        console.error("broadcast preview failed:", err.message);
+        console.error("broadcast input failed:", err.message);
         await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
       }
       return;
