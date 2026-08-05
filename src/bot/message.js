@@ -3,6 +3,7 @@ const { bot } = require("./bot");
 const { start } = require("./helper/start");
 const { isAllowedAdminUser } = require("./helper/admins");
 const { sendStatistika } = require("./helper/statistika");
+const { sendStatsPage } = require("./helper/statspage");
 const {
   startBroadcast,
   isAwaitingBroadcast,
@@ -22,6 +23,15 @@ bot.on("message", async (msg) => {
         await sendStatistika(bot, chatId);
       } catch (err) {
         console.error("statistika failed:", err.message);
+        await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
+      }
+      return;
+    }
+    if (cmd === "/statspage") {
+      try {
+        await sendStatsPage(bot, chatId);
+      } catch (err) {
+        console.error("statspage failed:", err.message);
         await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
       }
       return;
