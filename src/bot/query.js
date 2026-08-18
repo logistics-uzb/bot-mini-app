@@ -7,6 +7,8 @@ const {
   recordVote,
   showSurveyResults,
 } = require("./helper/broadcast");
+const { isUserTypeCallback, handleTypePick } = require("./helper/user-type");
+const { showMainMenu } = require("./helper/start");
 
 bot.on("callback_query", async (query) => {
   const chatId = query.from.id;
@@ -21,6 +23,16 @@ bot.on("callback_query", async (query) => {
       const surveyId = rest.slice(0, li);
       const optionIdx = Number(rest.slice(li + 1));
       await recordVote(bot, query, surveyId, optionIdx);
+      return;
+    }
+
+    // User type picker — user-facing (admin gate yo'q), o'zi ack qiladi
+    if (isUserTypeCallback(data)) {
+      const result = await handleTypePick(bot, query);
+      if (result.ok) {
+        // Rol saqlangach darhol main menu ko'rsatamiz
+        await showMainMenu(chatId, query.from.first_name || "");
+      }
       return;
     }
 

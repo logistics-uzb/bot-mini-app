@@ -1,8 +1,46 @@
+const mongoose = require("mongoose");
 const Users = require("../../model/users");
 const Survey = require("../../model/survey");
+const BroadcastLog = require("../../model/broadcast-log");
 require("dotenv").config();
 
+/**
+ * Telegram API xatosini kategoriyaga ajratadi.
+ * Filterlash va agregatsiya uchun ishlatiladi (`GET /v1/broadcast-logs`).
+ *
+ * Kategoriyalar:
+ *   blocked         — foydalanuvchi botni bloklagan (403)
+ *   deactivated     — akkaunt o'chirilgan (403)
+ *   chat_not_found  — chat_id mavjud emas (400)
+ *   rate_limit      — 429 Too Many Requests
+ *   other           — boshqa xato (network va h.k.)
+ */
+const categorizeBroadcastError = (err) => {
+  const body = err?.response?.body;
+  const code = body?.error_code ?? null;
+  const desc = String(body?.description || err?.message || "");
+  const low = desc.toLowerCase();
+
+  let category = "other";
+  if (code === 403 && low.includes("blocked")) category = "blocked";
+  else if (code === 403 && low.includes("deactivated")) category = "deactivated";
+  else if (code === 403) category = "blocked"; // ehtimol boshqa 403 — bloklash oilasi
+  else if (
+    code === 400 &&
+    (low.includes("chat not found") || low.includes("peer_id_invalid"))
+  ) {
+    category = "chat_not_found";
+  } else if (code === 429) category = "rate_limit";
+
+  return { code, message: desc.slice(0, 500), category };
+};
+
 const BROADCAST_DELAY_MS = 50; // ~20 msg/sec, safely under Telegram's ~30/sec global limit.
+// Batch rejim: har BROADCAST_BATCH_SIZE ta xabardan keyin BROADCAST_BATCH_PAUSE_MS ms kutamiz.
+// Bu bloklash/rate-limit muammosini kamaytiradi (Telegram serverga "nafas olish" imkoni beradi).
+// Hozirgi konfiguratsiya: ~8.6 msg/sec o'rtacha → 2900 user ~5.7 daqiqa.
+const BROADCAST_BATCH_SIZE = 30;
+const BROADCAST_BATCH_PAUSE_MS = 2000;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_POLL_OPTIONS = 10;
 const MIN_POLL_OPTIONS = 2;
@@ -353,8 +391,9 @@ const confirmAndSend = async (bot, adminChatId) => {
   const { type, draft, poll } = s;
   sessions.delete(adminChatId);
 
+  // Barcha userlarni chat_id + userType bilan olamiz — log'da userType saqlanadi
   const users = await Users.find({ chat_id: { $exists: true, $ne: null } })
-    .select("chat_id")
+    .select("chat_id userType")
     .lean();
 
   await bot.sendMessage(
@@ -365,6 +404,46 @@ const confirmAndSend = async (bot, adminChatId) => {
   let sent = 0;
   let failed = 0;
 
+  // Har jo'natish sessiyasi uchun bir xil broadcastId — filter uchun kalit.
+  // Poll uchun Survey._id, boshqalarga yangi ObjectId.
+  let broadcastId;
+
+  // Log yozuvlarini batch bilan saqlash (har bittasini alohida yozish sekin bo'ladi)
+  const logBuffer = [];
+  const flushLogs = async () => {
+    if (logBuffer.length === 0) return;
+    const batch = logBuffer.splice(0, logBuffer.length);
+    try {
+      await BroadcastLog.insertMany(batch, { ordered: false });
+    } catch (e) {
+      console.error("BroadcastLog insertMany failed:", e.message);
+    }
+  };
+
+  const logAttempt = (user, res) => {
+    const base = {
+      broadcastId,
+      type,
+      chatId: String(user.chat_id),
+      userType: user.userType ?? null,
+      sentAt: new Date(),
+    };
+    if (res.ok) {
+      logBuffer.push({ ...base, status: "ok" });
+    } else {
+      const cat = categorizeBroadcastError(res.err);
+      logBuffer.push({
+        ...base,
+        status: "error",
+        errorCode: cat.code,
+        errorCategory: cat.category,
+        errorMessage: cat.message,
+      });
+    }
+    // Har 100 yozuvda flush
+    if (logBuffer.length >= 100) return flushLogs();
+  };
+
   if (type === "poll") {
     const survey = await Survey.create({
       title: poll.title,
@@ -372,13 +451,14 @@ const confirmAndSend = async (bot, adminChatId) => {
       createdBy: String(adminChatId),
       votes: [],
     });
-    const surveyId = String(survey._id);
+    broadcastId = String(survey._id);
     const text = formatPollForUser(poll.title);
     const opts = {
       parse_mode: "HTML",
-      reply_markup: buildPollVoteKeyboard(surveyId, poll.options),
+      reply_markup: buildPollVoteKeyboard(broadcastId, poll.options),
     };
 
+    let processed = 0;
     for (const user of users) {
       if (!user.chat_id) continue;
       const res = await sendOneWithRetry(bot, user.chat_id, text, opts);
@@ -388,10 +468,19 @@ const confirmAndSend = async (bot, adminChatId) => {
         const desc = res.err?.response?.body?.description || res.err?.message;
         console.error(`poll to ${user.chat_id} failed:`, desc);
       }
-      if (BROADCAST_DELAY_MS > 0) await sleep(BROADCAST_DELAY_MS);
+      await logAttempt(user, res);
+      processed++;
+      // Har BROADCAST_BATCH_SIZE (30) ta xabardan keyin BROADCAST_BATCH_PAUSE_MS (5s) kutamiz
+      if (processed % BROADCAST_BATCH_SIZE === 0) {
+        await sleep(BROADCAST_BATCH_PAUSE_MS);
+      } else if (BROADCAST_DELAY_MS > 0) {
+        await sleep(BROADCAST_DELAY_MS);
+      }
     }
   } else {
+    broadcastId = String(new mongoose.Types.ObjectId());
     const keyboard = type === "button" ? buildMiniAppKeyboard() : undefined;
+    let processed = 0;
     for (const user of users) {
       if (!user.chat_id) continue;
       const res = await copyOneWithRetry(
@@ -407,16 +496,30 @@ const confirmAndSend = async (bot, adminChatId) => {
         const desc = res.err?.response?.body?.description || res.err?.message;
         console.error(`broadcast to ${user.chat_id} failed:`, desc);
       }
-      if (BROADCAST_DELAY_MS > 0) await sleep(BROADCAST_DELAY_MS);
+      await logAttempt(user, res);
+      processed++;
+      // Har BROADCAST_BATCH_SIZE (30) ta xabardan keyin BROADCAST_BATCH_PAUSE_MS (5s) kutamiz
+      if (processed % BROADCAST_BATCH_SIZE === 0) {
+        await sleep(BROADCAST_BATCH_PAUSE_MS);
+      } else if (BROADCAST_DELAY_MS > 0) {
+        await sleep(BROADCAST_DELAY_MS);
+      }
     }
   }
+
+  // Oxirgi partiyani yozamiz
+  await flushLogs();
 
   await bot.sendMessage(
     adminChatId,
     `✅ Tugadi.
 Yuborildi: ${sent}
 Xatolik: ${failed}
-Jami: ${users.length}`
+Jami: ${users.length}
+
+📋 Broadcast ID: <code>${broadcastId}</code>
+Batafsil: <code>GET /v1/broadcast-logs?broadcastId=${broadcastId}</code>`,
+    { parse_mode: "HTML" }
   );
 };
 

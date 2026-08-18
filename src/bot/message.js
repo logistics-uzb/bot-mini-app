@@ -10,6 +10,7 @@ const {
   handleAdminInput,
   listSurveys,
 } = require("./helper/broadcast");
+const { sendTypeResults } = require("./helper/user-type");
 
 bot.on("message", async (msg) => {
   const chatId = msg.from.id;
@@ -51,6 +52,15 @@ bot.on("message", async (msg) => {
         await listSurveys(bot, chatId);
       } catch (err) {
         console.error("broadcast_results failed:", err.message);
+        await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
+      }
+      return;
+    }
+    if (cmd === "/followers_type_result") {
+      try {
+        await sendTypeResults(bot, chatId);
+      } catch (err) {
+        console.error("followers_type_result failed:", err.message);
         await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
       }
       return;
