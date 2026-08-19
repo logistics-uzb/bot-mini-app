@@ -3,6 +3,7 @@ const { bot } = require("./bot");
 const { start } = require("./helper/start");
 const { isAllowedAdminUser } = require("./helper/admins");
 const { sendStatistika } = require("./helper/statistika");
+const { sendStatsByCartype } = require("./helper/statistika-cartype");
 const { sendStatsPage } = require("./helper/statspage");
 const {
   startBroadcast,
@@ -25,6 +26,15 @@ bot.on("message", async (msg) => {
         await sendStatistika(bot, chatId);
       } catch (err) {
         console.error("statistika failed:", err.message);
+        await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
+      }
+      return;
+    }
+    if (cmd === "/statshoutbycartype") {
+      try {
+        await sendStatsByCartype(bot, chatId);
+      } catch (err) {
+        console.error("statshoutbycartype failed:", err.message);
         await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
       }
       return;
