@@ -10,6 +10,8 @@ const {
   isAwaitingBroadcast,
   handleAdminInput,
   listSurveys,
+  isAwaitingAnswer,
+  recordAnswer,
 } = require("./helper/broadcast");
 const { sendTypeResults } = require("./helper/user-type");
 
@@ -83,6 +85,21 @@ bot.on("message", async (msg) => {
         console.error("broadcast input failed:", err.message);
         await bot.sendMessage(chatId, `❌ Xatolik: ${err.message}`);
       }
+      return;
+    }
+  }
+
+  // User "Javob yozish" bosgan va matn yubordi — javob sifatida saqlaymiz.
+  // Admin ham javob berayotgan bo'lishi mumkin — shu sabab admin bloki tashqarisida.
+  if (isAwaitingAnswer(chatId)) {
+    try {
+      const handled = await recordAnswer(bot, msg);
+      if (handled) return;
+    } catch (err) {
+      console.error("recordAnswer failed:", err.message);
+      await bot
+        .sendMessage(chatId, `❌ Xatolik: ${err.message}`)
+        .catch(() => {});
       return;
     }
   }
